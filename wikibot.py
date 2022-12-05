@@ -25,19 +25,26 @@ bot = discord.Bot(debug_guilds=debug_guild)
 user_agent = os.getenv('USER_AGENT')
 
 
-def name_conversion(name):
+def convert_identifier(name_or_id: str):
     """
-    Given a string `name`, return the `id` of the first match from RSWiki Mapping API.
+    Converts the input name or id to its corresponding name or id using the RSWiki API Mapping tool
 
-    :param name: The string to search for in the `json` object.
-    :return: The `id` of the matching element, or the string 'No match' if no matching element was found.
+    Args:
+        name_or_id (str): A string that represents the name or id to be converted.
+
+    Returns:
+        str: The converted name or id, or the string 'No match' if no matching elements were found.
     """
+
     # Create a Mapping object with the specified user_agent parameter.
     temp_map = Mapping(user_agent=user_agent)
 
-    # Use a list comprehension to extract the id of each element where the name field matches the input name,
-    # ignoring the case of the strings.
-    response = [x['id'] for x in temp_map.json if name.lower() == x['name'].lower()]
+    if name_or_id.isnumeric():
+        # If the input name_or_id is numeric (aka an itemID), find the id in the Map
+        response = [x['name'] for x in temp_map.json if int(name_or_id) == int(x['id'])]
+    else:
+        # If the input name_or_id is not numeric (aka an item name), find the name in the map and return the ID
+        response = [x['id'] for x in temp_map.json if name_or_id.lower() == x['name'].lower()]
 
     # If the response list is empty, then no matching elements were found and return the string 'No match'.
     if len(response) == 0:
@@ -112,7 +119,7 @@ def convert_names_to_ids(id_string: str):
 
         # If the element is not numeric, it is a name.
         # Convert the name to a numeric element using the name_conversion function.
-        temp_id = name_conversion(item_id)
+        temp_id = convert_identifier(item_id)
 
         # If the converted element is numeric, replace the original non-numeric element with the numeric element
         # in the id_list array.
@@ -157,7 +164,7 @@ async def average(ctx: discord.ApplicationContext,
         if name == '':
             await ctx.respond('Must provide a name or an itemID')
 
-        id = str(name_conversion(name))
+        id = str(convert_identifier(name))
 
     if (id == '') or (id is None):
         await ctx.respond(f'Failed to lookup itemID for {name}, found {id}')
@@ -172,33 +179,39 @@ async def average(ctx: discord.ApplicationContext,
 
 
 @bot.slash_command(description='Generate historical pricing')
-@option('id', description='Specific itemID', required=False)
-@option('name', description='Item name', required=False)
+@option('id', description='Specific itemID', required=False, default='')
+@option('name', description='Item name', required=False, default='')
 @option('timestep', description='Step for time stamps (5m, 1h, etc)', required=False, default='5m')
-async def timeseries(ctx: discord.ApplicationContext, id: str, name:str, timestep: str):
+async def timeseries(ctx: discord.ApplicationContext, id: str, name: str, timestep: str):
 
-    if (id == '') or (id is None):
+    if id == '':
         if name == '':
             await ctx.respond('Must provide a name or an itemID')
 
-        id = name_conversion(name)
+        id = str(convert_identifier(name))
 
     if (id == '') or (id is None):
         await ctx.respond(f'Failed to lookup itemID for {name}, found {id}')
     else:
+        if name == '':
+            name = convert_identifier(id)
+
         time_series = TimeSeries(id=id, timestep=timestep, user_agent=user_agent)
 
         # Format the data
         df = pd.DataFrame(time_series.content)
         # Turn unix time into normal datetime
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+        df[['avgHighPrice', 'avgLowPrice']] = df[['avgHighPrice', 'avgLowPrice']].fillna(method='ffill')
+        df[['highPriceVolume', 'lowPriceVolume']] = df[['highPriceVolume', 'lowPriceVolume']].fillna(0)
 
         # Initialize IO
         data_stream = io.BytesIO()
 
         # Do plotting
         plt.figure(figsize=(1, 1))
-        trend = df.plot(x="timestamp", y=['avgHighPrice', 'avgLowPrice'])
+        trend = df.plot(x="timestamp", y=['avgHighPrice', 'avgLowPrice'], xlabel='timestamp', ylabel='price')
+        trend.set_title(f'{id} - {name}')
 
         # Save content into the data stream
         plt.savefig(data_stream, format='png', bbox_inches="tight", dpi=80)
