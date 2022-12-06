@@ -2,7 +2,6 @@
 
 # Imports for pycord
 import discord
-import rswiki_wrapper
 from discord import option
 
 # Imports for dotenv
@@ -12,8 +11,10 @@ import dotenv
 # Imports for data
 from rswiki_wrapper import Latest, TimeSeries, AvgPrice, Mapping
 import json
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import io
 
 dotenv.load_dotenv()
@@ -83,7 +84,9 @@ Required Parameters: `timestep` - The time period to request an average. RSWiki 
                       'timeseries': """`timeseries`
 Returns a timeseries graph of the last 365 points of price & volume data for a specific time step for a given item
 Required Parameters: `timestep` - The time step to average data. RSWiki accepts 5m and 1h as valid arguments
-`id` OR `name` - The item name or ID. If you provide both, item name will be ignored.Name is case insensitive.""",
+`id` OR `name` - The item name or ID. If you provide both, item name will be ignored. Name is case insensitive.
+Optional Parameters: `volume`: 
+""",
                       'itemid': """`itemid`
 Look up an item by name to find out the item ID
 Required Parameters: `name` - The item name to look up. Name is case insensitive and can be partial.
@@ -182,7 +185,8 @@ async def average(ctx: discord.ApplicationContext,
 @option('id', description='Specific itemID', required=False, default='')
 @option('name', description='Item name', required=False, default='')
 @option('timestep', description='Step for time stamps (5m, 1h, etc)', required=False, default='5m')
-async def timeseries(ctx: discord.ApplicationContext, id: str, name: str, timestep: str):
+@option('volume', description='Include volume? (Default yes)', required=False, default=True)
+async def timeseries(ctx: discord.ApplicationContext, id: str, name: str, timestep: str, volume: bool):
 
     if id == '':
         if name == '':
@@ -196,22 +200,98 @@ async def timeseries(ctx: discord.ApplicationContext, id: str, name: str, timest
         if name == '':
             name = convert_identifier(id)
 
+        if 'm' in timestep:
+            freq = timestep.strip('m') + 'min'
+        elif 'h' in timestep:
+            freq = timestep
+        else:
+            await ctx.respond(f'Invalid timestep {timestep}')
+            return
+
         time_series = TimeSeries(id=id, timestep=timestep, user_agent=user_agent)
 
         # Format the data
         df = pd.DataFrame(time_series.content)
-        # Turn unix time into normal datetime
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+
+        # Add any missing intervals, format unix to datetime
+        start = pd.to_datetime(df[['timestamp'][0]].min(), unit='s')
+        end = pd.to_datetime(df[['timestamp'][0]].max(), unit='s')
+        dates = pd.date_range(start=start, end=end, freq=freq).to_pydatetime()
+
+        df = df.set_index('timestamp').reindex(dates).reset_index().reindex(columns=df.columns)
+
+        # Fill any NaN entries
         df[['avgHighPrice', 'avgLowPrice']] = df[['avgHighPrice', 'avgLowPrice']].fillna(method='ffill')
         df[['highPriceVolume', 'lowPriceVolume']] = df[['highPriceVolume', 'lowPriceVolume']].fillna(0)
+
+        # Invert lowPriceVolume
+        df[['lowPriceVolume']] = df[['lowPriceVolume']] * -1
 
         # Initialize IO
         data_stream = io.BytesIO()
 
         # Do plotting
-        plt.figure(figsize=(1, 1))
-        trend = df.plot(x="timestamp", y=['avgHighPrice', 'avgLowPrice'], xlabel='timestamp', ylabel='price')
-        trend.set_title(f'{id} - {name}')
+        if volume:
+            fig, axs = plt.subplots(nrows=2, sharex=False, figsize=(15, 10))
+            plt.subplots_adjust(hspace=0.5)
+
+            width = np.min(np.diff(mdates.date2num(df[['timestamp'][0]])))
+
+            axs[0].plot('timestamp', 'avgHighPrice', data=df, label='High Price', lw=0.95, color='orange', )
+            axs[0].plot('timestamp', 'avgLowPrice', data=df, label='Low Price', lw=0.95, color='green')
+            axs[0].legend()
+            axs[0].set_title(f'Price - {name.capitalize()} - ID {id}')
+
+            axs[1].bar('timestamp', 'highPriceVolume', width=width, data=df, label='High Price Volume', color='orange',
+                       ec="k", lw=0.1)
+            axs[1].bar('timestamp', 'lowPriceVolume', width=width, data=df, label='Low Price Volume', color='green',
+                       ec="k", lw=0.1)
+            axs[1].legend()
+            axs[1].set_title(f'Volume - {name.capitalize()} - ID {id}')
+
+            for nn, ax in enumerate(axs):
+                locator = mdates.AutoDateLocator()
+                formatter = mdates.ConciseDateFormatter(locator)
+                formatter.formats = ['%y',  # ticks are mostly years
+                                     '%b',  # ticks are mostly months
+                                     '%d',  # ticks are mostly days
+                                     '%H:%M',  # hrs
+                                     '%H:%M',  # min
+                                     '', ]  # secs
+                # these are mostly just the level above...
+                formatter.zero_formats = [''] + formatter.formats[:-1]
+                # ...except for ticks that are mostly hours, then it is nice to have
+                # month-day:
+                formatter.zero_formats[3] = '%d-%b'
+
+                formatter.offset_formats = ['',
+                                            '%Y',
+                                            '%b %Y',
+                                            '%d %b %Y',
+                                            '%d %b %Y',
+                                            '%d %b %Y %H:%M', ]
+
+                ax.xaxis.set_major_locator(locator)
+                ax.xaxis.set_major_formatter(formatter)
+                ax.set_xlim(left=df[['timestamp'][0]].min(), right=df[['timestamp'][0]].max())
+                plt.setp(ax.get_xticklabels(), visible=True, rotation=30)
+
+            # fig, axes = plt.subplots(nrows=2, figsize=(9, 9))
+            # plt.subplots_adjust(hspace=0.4)
+            #
+            # df.plot(ax=axes[0], x="timestamp", y=['avgHighPrice', 'avgLowPrice'], xlabel='timestamp', ylabel='price')
+            # axes[0].set_title(f'Price - ID {id} - {name.capitalize()}')
+            #
+            # df.plot.bar(ax=axes[1], x="timestamp", y=['highPriceVolume', 'lowPriceVolume'], xlabel='timestamp',
+            #             ylabel='volume', stacked=True, width=0.9)
+            # axes[1].set_title(f'Volume - ID {id} - {name.capitalize()}')
+            # axes[1].xaxis.set_major_locator(ticker.AutoLocator())
+
+        else:
+            plt.figure(figsize=(1, 1))
+            trend = df.plot(x="timestamp", y=['avgHighPrice', 'avgLowPrice'], xlabel='timestamp', ylabel='price')
+            trend.set_title(f'{id} - {name}')
 
         # Save content into the data stream
         plt.savefig(data_stream, format='png', bbox_inches="tight", dpi=80)
