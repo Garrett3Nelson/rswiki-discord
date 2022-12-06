@@ -10,12 +10,15 @@ import dotenv
 
 # Imports for data
 from rswiki_wrapper import Latest, TimeSeries, AvgPrice, Mapping
+from datetime import datetime
 import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import io
+
+print(f'Loading environment')
 
 dotenv.load_dotenv()
 
@@ -25,39 +28,37 @@ debug_guild = [int(x) for x in debug_guild]
 bot = discord.Bot(debug_guilds=debug_guild)
 user_agent = os.getenv('USER_AGENT')
 
+item_mapping = Mapping(user_agent=user_agent)
+item_map = {}
+for d in item_mapping.json:
+    item_map[str(d['id'])] = d
+    item_map[d['name']] = d
 
-def convert_identifier(name_or_id: str):
+print(f'Done loading, syncing commands')
+
+
+def convert_identifier(value):
     """
-    Converts the input name or id to its corresponding name or id using the RSWiki API Mapping tool
-
-    Args:
-        name_or_id (str): A string that represents the name or id to be converted.
-
-    Returns:
-        str: The converted name or id, or the string 'No match' if no matching elements were found.
+    This function takes in a list of dictionaries and a value (either an 'id' or a 'name'),
+    and returns the 'id' if the provided value is a 'name', or the 'name' if the provided value is an 'id'.
+    If no matching dictionary is found, the function returns None.
     """
-
-    # Create a Mapping object with the specified user_agent parameter.
-    temp_map = Mapping(user_agent=user_agent)
-
-    if name_or_id.isnumeric():
-        # If the input name_or_id is numeric (aka an itemID), find the id in the Map
-        response = [x['name'] for x in temp_map.json if int(name_or_id) == int(x['id'])]
+    value = value.capitalize()
+    if value in item_map:
+        # If the provided value is a key in the item_map, return the 'name' if the provided value is an 'id'
+        # or the 'id' if the provided value is a 'name'
+        if value.isnumeric():
+            return item_map[value]['name']
+        else:
+            return item_map[value]['id']
     else:
-        # If the input name_or_id is not numeric (aka an item name), find the name in the map and return the ID
-        response = [x['id'] for x in temp_map.json if name_or_id.lower() == x['name'].lower()]
-
-    # If the response list is empty, then no matching elements were found and return the string 'No match'.
-    if len(response) == 0:
-        return 'No match'
-
-    # Otherwise, return the first element of the response list, which is the id of the matching element.
-    return response[0]
+        return None
 
 
 @bot.event
 async def on_ready():
     await bot.sync_commands()
+
     print(f'We have logged in as {bot.user}')
 
 
@@ -108,7 +109,7 @@ def convert_names_to_ids(id_string: str):
 
     Returns:
         str: A new string with the same elements as the input string, but with any non-numeric elements converted to
-             numeric elements using the name_conversion function. Any elements which fail name_conversion are removed
+             numeric elements using the convert_identifier function. Any elements which fail name_conversion are removed
     """
 
     # Split the input string into a list of elements.
@@ -136,49 +137,100 @@ def convert_names_to_ids(id_string: str):
     return '|'.join(id_list)
 
 
+def pretty_timestamp(timestamp):
+    """
+    This function takes in a Unix timestamp in seconds, and returns a human-readable relative timestamp (e.g. "3 minutes ago")
+    """
+
+    # Convert the timestamp to a datetime object
+    timestamp_dt = datetime.fromtimestamp(timestamp)
+
+    # Get the current date and time
+    now = datetime.now()
+
+    # Calculate the difference between the two datetime objects
+    diff = now - timestamp_dt
+
+    s = diff.seconds
+    if diff.days > 7 or diff.days < 0:
+        return d.strftime('%d %b %y')
+    elif diff.days == 1:
+        return '1 day ago'
+    elif diff.days > 1:
+        return '{} days ago'.format(diff.days)
+    elif s <= 1:
+        return 'just now'
+    elif s < 60:
+        return '{} seconds ago'.format(s)
+    elif s < 120:
+        return '1 minute ago'
+    elif s < 3600:
+        return '{} minutes ago'.format(int(s / 60))
+    elif s < 7200:
+        return '1 hour ago'
+    else:
+        return '{} hours ago'.format(int(s / 3600))
+
+
 @bot.slash_command(description='Get latest real-time prices')
-@option('items', description='Specific item IDs or names(separate with | for multiple)', required=True, default='')
+@option('items', description='Specific item IDs or names(separate with | for multiple)', required=True)
 async def latest(ctx: discord.ApplicationContext,
                  items: str):
 
     ids = convert_names_to_ids(items)
 
-    # if len(ids) == 0:
-    #    real_time = Latest(user_agent=user_agent)
-    # else:
-    real_time = Latest(id=ids, user_agent=user_agent)
+    if ids is None or ids == '':
+        await ctx.respond('Unable to find any valid item IDs that match your request, '
+                          'try `/itemid` to look up any partial item names')
+        return
 
-    response = json.dumps(real_time.content, indent=4)
+    await ctx.defer()
+    for item in ids.split('|'):
+        item_name = item_map[item]['name']
 
-    if len(response) > 2000:
-        response = 'Cannot provide information for that many itemIDs, try specifying fewer itemIDs'
+        real_time = Latest(id=item, user_agent=user_agent)
 
-    await ctx.respond(response)
+        embed = discord.Embed(title=f'{item_name} - Latest Prices',
+                              url='https://prices.runescape.wiki/osrs/item/'+item)
+        embed.set_thumbnail(url='https://oldschool.runescape.wiki/images/'+item_map[item]['icon'].replace(' ', '_'))
+        embed.add_field(name=f"Buy Price: {real_time.content[str(item)]['high']}",
+                        value=f"{pretty_timestamp(real_time.content[str(item)]['highTime'])}")
+        embed.add_field(name=f"Sell Price: {real_time.content[str(item)]['low']}",
+                        value=f"{pretty_timestamp(real_time.content[str(item)]['lowTime'])}")
+
+        embed.set_footer(text="Information requested by: {}".format(ctx.author.display_name))
+        await ctx.respond(embed=embed)
 
 
 @bot.slash_command(description='Get 5m or 1h average prices')
-@option('id', description='Specific ID', required=False)
-@option('name', description='Item name', required=False)
+@option('items', description='Specific item IDs or names(separate with | for multiple)', required=True)
 @option('timestep', description='Choose a timestep (5m or 1h)', required=True, default='5m')
-async def average(ctx: discord.ApplicationContext,
-                 id: str, name: str, timestep: str):
+async def average(ctx: discord.ApplicationContext, items: str, timestep: str):
 
-    if (id == '') or (id is None):
-        if name == '':
-            await ctx.respond('Must provide a name or an itemID')
+    ids = convert_names_to_ids(items)
 
-        id = str(convert_identifier(name))
+    if ids is None or ids == '':
+        await ctx.respond('Unable to find any valid item IDs that match your request, '
+                          'try `/itemid` to look up any partial item names')
+        return
 
-    if (id == '') or (id is None):
-        await ctx.respond(f'Failed to lookup itemID for {name}, found {id}')
-    else:
-        real_time = AvgPrice(route=timestep, user_agent=user_agent)
-        response = json.dumps(real_time.content[id], indent=4)
+    await ctx.defer()
 
-        if len(response) > 2000:
-            response = 'Cannot provide information for that many itemIDs, try specifying fewer itemIDs'
+    real_time = AvgPrice(route=timestep, user_agent=user_agent)
 
-        await ctx.respond(response)
+    for item in ids.split('|'):
+        item_name = item_map[item]['name']
+
+        embed = discord.Embed(title=f'{item_name} - {timestep} Average Prices',
+                              url='https://prices.runescape.wiki/osrs/item/'+item)
+        embed.set_thumbnail(url='https://oldschool.runescape.wiki/images/'+item_map[item]['icon'].replace(' ', '_'))
+        embed.add_field(name=f"Buy Price: {real_time.content[item]['avgHighPrice']}",
+                        value=f"Volume - {real_time.content[item]['highPriceVolume']}")
+        embed.add_field(name=f"Sell Price: {real_time.content[item]['avgLowPrice']}",
+                        value=f"Volume - {real_time.content[item]['lowPriceVolume']}")
+
+        embed.set_footer(text="Information requested by: {}".format(ctx.author.display_name))
+        await ctx.respond(embed=embed)
 
 
 @bot.slash_command(description='Generate historical pricing')
@@ -212,6 +264,8 @@ async def timeseries(ctx: discord.ApplicationContext, id: str, name: str, timest
 
         # Format the data
         df = pd.DataFrame(time_series.content)
+
+        await ctx.defer()
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
 
         # Add any missing intervals, format unix to datetime
@@ -232,20 +286,23 @@ async def timeseries(ctx: discord.ApplicationContext, id: str, name: str, timest
         data_stream = io.BytesIO()
 
         # Do plotting
+
+        plt.style.use('dark_background')
+
         if volume:
             fig, axs = plt.subplots(nrows=2, sharex=False, figsize=(15, 10))
             plt.subplots_adjust(hspace=0.5)
 
             width = np.min(np.diff(mdates.date2num(df[['timestamp'][0]])))
 
-            axs[0].plot('timestamp', 'avgHighPrice', data=df, label='High Price', lw=0.95, color='orange', )
-            axs[0].plot('timestamp', 'avgLowPrice', data=df, label='Low Price', lw=0.95, color='green')
+            axs[0].plot('timestamp', 'avgHighPrice', data=df, label='High Price', color='#ffa333')
+            axs[0].plot('timestamp', 'avgLowPrice', data=df, label='Low Price', color='#33ff5f')
             axs[0].legend()
             axs[0].set_title(f'Price - {name.capitalize()} - ID {id}')
 
-            axs[1].bar('timestamp', 'highPriceVolume', width=width, data=df, label='High Price Volume', color='orange',
+            axs[1].bar('timestamp', 'highPriceVolume', width=width, data=df, label='High Price Volume', color='#ffa333',
                        ec="k", lw=0.1)
-            axs[1].bar('timestamp', 'lowPriceVolume', width=width, data=df, label='Low Price Volume', color='green',
+            axs[1].bar('timestamp', 'lowPriceVolume', width=width, data=df, label='Low Price Volume', color='#33ff5f',
                        ec="k", lw=0.1)
             axs[1].legend()
             axs[1].set_title(f'Volume - {name.capitalize()} - ID {id}')
@@ -254,8 +311,8 @@ async def timeseries(ctx: discord.ApplicationContext, id: str, name: str, timest
                 locator = mdates.AutoDateLocator()
                 formatter = mdates.ConciseDateFormatter(locator)
                 formatter.formats = ['%y',  # ticks are mostly years
-                                     '%b',  # ticks are mostly months
-                                     '%d',  # ticks are mostly days
+                                     '%b %d',  # ticks are mostly months
+                                     '%b %d',  # ticks are mostly days
                                      '%H:%M',  # hrs
                                      '%H:%M',  # min
                                      '', ]  # secs
@@ -276,6 +333,7 @@ async def timeseries(ctx: discord.ApplicationContext, id: str, name: str, timest
                 ax.xaxis.set_major_formatter(formatter)
                 ax.set_xlim(left=df[['timestamp'][0]].min(), right=df[['timestamp'][0]].max())
                 plt.setp(ax.get_xticklabels(), visible=True, rotation=30)
+                ax.grid(True, color='0.4')
 
             # fig, axes = plt.subplots(nrows=2, figsize=(9, 9))
             # plt.subplots_adjust(hspace=0.4)
@@ -289,9 +347,11 @@ async def timeseries(ctx: discord.ApplicationContext, id: str, name: str, timest
             # axes[1].xaxis.set_major_locator(ticker.AutoLocator())
 
         else:
-            plt.figure(figsize=(1, 1))
-            trend = df.plot(x="timestamp", y=['avgHighPrice', 'avgLowPrice'], xlabel='timestamp', ylabel='price')
-            trend.set_title(f'{id} - {name}')
+            fig, axs = plt.subplots(figsize=(15, 5))
+            df.plot(ax=axs, x="timestamp", y=['avgHighPrice', 'avgLowPrice'], xlabel='timestamp', ylabel='price',
+                    color=['#ffa333', '#33ff5f'])
+            axs.set_title(f'Price - {name.capitalize()} - ID {id}')
+            axs.grid(True, color='0.4')
 
         # Save content into the data stream
         plt.savefig(data_stream, format='png', bbox_inches="tight", dpi=80)
