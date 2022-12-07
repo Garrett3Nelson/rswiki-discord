@@ -370,8 +370,7 @@ async def timeseries(ctx: discord.ApplicationContext, id: str, name: str, timest
 @bot.slash_command(name='itemid', description='Lookup the ID of an item')
 @option('name', description='Item Name', required=True)
 async def id_lookup(ctx: discord.ApplicationContext, name: str):
-    temp_map = Mapping(user_agent=user_agent)
-    response = [(x['id'], x['name']) for x in temp_map.json if name.lower() in x['name'].lower()]
+    response = [(k, v['id']) for k, v in item_map.items() if name.lower() in k.lower()]
 
     if len(response) > 2000:
         response = 'Cannot provide information for that many itemIDs, try specifying fewer itemIDs'
