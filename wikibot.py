@@ -11,7 +11,6 @@ import dotenv
 # Imports for data
 from rswiki_wrapper import Latest, TimeSeries, AvgPrice, Mapping
 from datetime import datetime
-import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -30,7 +29,7 @@ user_agent = os.getenv('USER_AGENT')
 
 item_mapping = Mapping(user_agent=user_agent)
 item_map = {}
-for d in item_mapping.json:
+for d in item_mapping.content:
     item_map[str(d['id'])] = d
     item_map[d['name']] = d
 
@@ -72,21 +71,23 @@ async def hello(ctx):
 async def help(ctx: discord.ApplicationContext, command: str):
     valid_commands = {'all': """Here is a list of valid commands:
 `/latest`: Returns the latest real-time price & volume for given items
-`/average`: Returns the average real-time price & volume over a specified time period for a given item
-`/timeseries`: Returns a timeseries graph of the latest 365 price & volume data for a specific time step for a given item
+`/average`: Returns the average real-time price & volume over a specified time period for given items
+`/timeseries`: Returns a timeseries graph of the latest 365 price & volume datapoints for a specific time step for a given item
 `/itemid`: Look up an item by name to find out the item ID""",
                       'latest': """`latest`
 Returns the latest real-time price & volume for given item(s)
-Required Parameters: `items` - Provide the item ID(s) or name(s) to provide the latest price & volume for. If looking up multiple items, separate with |""",
+Required Parameters: `items` - Provide the item ID(s) or name(s) to provide the latest price & volume for. 
+If looking up multiple items, separate with |. Names are not case sensitive""",
                       'average': """`average`
-Returns the average real-time price & volume over a specified time period for a given item
+Returns the average real-time price & volume over a specified time period for given items
 Required Parameters: `timestep` - The time period to request an average. RSWiki accepts 5m and 1h as valid arguments
-`id` OR `name` - The item name or ID. If you provide both, item name will be ignored. Name is case insensitive.""",
+`items` - Provide the item ID(s) or name(s) to provide the latest price & volume for. 
+If looking up multiple items, separate with |. Names are not case sensitive""",
                       'timeseries': """`timeseries`
-Returns a timeseries graph of the last 365 points of price & volume data for a specific time step for a given item
+Returns a timeseries graph of the latest 365 price & volume datapoints for a specific time step for a given item
 Required Parameters: `timestep` - The time step to average data. RSWiki accepts 5m and 1h as valid arguments
 `id` OR `name` - The item name or ID. If you provide both, item name will be ignored. Name is case insensitive.
-Optional Parameters: `volume`: 
+Optional Parameters: `volume`: Boolean - True to include volume graph, False to exclude it
 """,
                       'itemid': """`itemid`
 Look up an item by name to find out the item ID
