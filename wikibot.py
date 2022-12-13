@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import io
 
-# Helper Imports
+# Helper imports
 import logging
 
 logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s: %(message)s', level=logging.INFO)
@@ -60,6 +60,12 @@ async def on_ready():
     logging.info(f'We have logged in as {bot.user}')
 
 
+@bot.event
+async def on_application_command(command):
+    logging.info(f'Received from {command.author} at {command.guild}: {command.command} with options '
+                 f'{command.selected_options}')
+
+
 @bot.slash_command(name='hello', description='Test Slash Commands and Say Hello')
 async def hello(ctx):
     await ctx.respond("Hello!")
@@ -74,7 +80,7 @@ async def bot_help(ctx: discord.ApplicationContext, command: str):
     valid_commands = ['all', 'latest', 'average', 'timeseries', 'property_lookup', 'search', 'itemid']
 
     if command not in valid_commands:
-        logging.warning(f'Help: User {ctx.author.display_name} submitted {command} which is not in the valid commands array')
+        logging.warning(f'Help: User {ctx.author} submitted {command} which is not in the valid commands array')
         await ctx.respond('Your command is not valid, use `/help` with no command to see valid documented commands')
         return
 
@@ -168,6 +174,7 @@ async def bot_help(ctx: discord.ApplicationContext, command: str):
         embed.add_field(name=f"Sample usage",
                         value="`/itemid name:crystal", inline=False)
 
+    embed.set_author(name=ctx.author)
     embed.set_footer(text="RSWiki Bot is created by Garrett#8250")
     await ctx.respond(embed=embed)
 
@@ -254,7 +261,7 @@ async def latest(ctx: discord.ApplicationContext,
     ids = convert_names_to_ids(items)
 
     if ids is None or ids == '':
-        logging.warning(f'Latest: User {ctx.author.display_name} submitted {items} which converted to {ids} and broke '
+        logging.warning(f'Latest: User {ctx.author} submitted {items} which converted to {ids} and broke '
                         f'/latest')
         await ctx.respond('Unable to find any valid item IDs that match your request, '
                           'try `/itemid` to look up any partial item names')
@@ -272,12 +279,14 @@ async def latest(ctx: discord.ApplicationContext,
                               url='https://prices.runescape.wiki/osrs/item/' + item)
         embed.set_thumbnail(
             url='https://oldschool.runescape.wiki/images/' + item_map[item_name]['icon'].replace(' ', '_'))
+
         embed.add_field(name=f"Buy Price: {rt_latest['high']}",
                         value=f"{pretty_timestamp(rt_latest['highTime'])}")
         embed.add_field(name=f"Sell Price: {rt_latest['low']}",
                         value=f"{pretty_timestamp(rt_latest['lowTime'])}")
 
-        embed.set_footer(text="Information requested by: {}".format(ctx.author.display_name))
+        embed.set_author(name=ctx.author.display_name, url=ctx.author.jump_url, icon_url=ctx.author.display_avatar.url)
+        embed.set_footer(text="RSWiki Bot is created by Garrett#8250")
         await ctx.respond(embed=embed)
 
 
@@ -288,13 +297,13 @@ async def average(ctx: discord.ApplicationContext, items: str, timestep: str):
     try:
         ids = convert_names_to_ids(items)
     except TypeError:
-        logging.warning(f'Average: User {ctx.author.display_name} submitted {items} which threw a TypeError when '
+        logging.warning(f'Average: User {ctx.author} submitted {items} which threw a TypeError when '
                         f'converting ids')
         await ctx.respond('Failed item lookup, ensure you are using a valid item name or ID')
         return
 
     if ids is None or ids == '':
-        logging.warning(f'Average: User {ctx.author.display_name} submitted {items} which converted to {ids} and will '
+        logging.warning(f'Average: User {ctx.author} submitted {items} which converted to {ids} and will '
                         f'not work with the request')
         await ctx.respond('Unable to find any valid item IDs that match your request, '
                           'try `/itemid` to look up any partial item names')
@@ -305,7 +314,7 @@ async def average(ctx: discord.ApplicationContext, items: str, timestep: str):
     try:
         real_time = AvgPrice(route=timestep, user_agent=user_agent)
     except KeyError:
-        logging.warning(f'Average: User {ctx.author.display_name} submitted {timestep} which threw a KeyError when '
+        logging.warning(f'Average: User {ctx.author} submitted {timestep} which threw a KeyError when '
                         f'trying to pull average price')
         await ctx.respond('Failed price lookup, ensure you are using a valid timestep (5m, 1h)')
         return
@@ -321,7 +330,9 @@ async def average(ctx: discord.ApplicationContext, items: str, timestep: str):
         embed.add_field(name=f"Sell Price: {real_time.content[item]['avgLowPrice']}",
                         value=f"Volume - {real_time.content[item]['lowPriceVolume']}")
 
-        embed.set_footer(text="Information requested by: {}".format(ctx.author.display_name))
+        embed.set_author(name=ctx.author.display_name, url=ctx.author.jump_url, icon_url=ctx.author.display_avatar.url)
+        embed.set_footer(text="RSWiki Bot is created by Garrett#8250")
+
         await ctx.respond(embed=embed)
 
 
@@ -333,7 +344,7 @@ async def timeseries(ctx: discord.ApplicationContext, item: str, timestep: str, 
     item_id, item_name = item_to_tuple(item)
 
     if item_id is None or item_name is None:
-        logging.warning(f'Timeseries: User {ctx.author.display_name} submitted {item} which converted to '
+        logging.warning(f'Timeseries: User {ctx.author} submitted {item} which converted to '
                         f'({item_id}, {item_name}) is not a valid item pair')
         await ctx.respond('Unable to find any valid items that match your request, '
                           'try `/itemid` to look up any partial item names')
@@ -344,14 +355,14 @@ async def timeseries(ctx: discord.ApplicationContext, item: str, timestep: str, 
     elif 'h' in timestep:
         freq = timestep
     else:
-        logging.warning(f'Timeseries: User {ctx.author.display_name} submitted {timestep} which is invalid')
+        logging.warning(f'Timeseries: User {ctx.author} submitted {timestep} which is invalid')
         await ctx.respond(f"Invalid timestep '{timestep}'")
         return
 
     try:
         time_series = TimeSeries(id=item_id, timestep=timestep, user_agent=user_agent)
     except KeyError:
-        logging.warning(f'Average: User {ctx.author.display_name} submitted {timestep}  and {item} which threw a '
+        logging.warning(f'Average: User {ctx.author} submitted {timestep}  and {item} which threw a '
                         f'KeyError when trying to pull average price')
         await ctx.respond('Failed lookup, ensure you are using a valid item and timestep (5m, 1h)')
         return
@@ -444,7 +455,12 @@ async def timeseries(ctx: discord.ApplicationContext, item: str, timestep: str, 
     # Create file
     data_stream.seek(0)
     chart = discord.File(data_stream, filename="price_history.png")
-    embed = discord.Embed()
+
+    # Populate Embed item
+    embed = discord.Embed(title=f'{item_name.capitalize()} - {timestep} Timeseries',
+                          url=f'https://prices.runescape.wiki/osrs/item/{item_id}')
+    embed.set_thumbnail(url='https://oldschool.runescape.wiki/images/' + item_map[item_id]['icon'].replace(' ', '_'))
+    embed.set_author(name=ctx.author.display_name, url=ctx.author.jump_url, icon_url=ctx.author.display_avatar.url)
     embed.set_image(url="attachment://price_history.png")
 
     await ctx.respond(file=chart, embed=embed)
@@ -458,7 +474,7 @@ async def property_lookup(ctx: discord.ApplicationContext, item: str, game: str,
     item_id, item_name = item_to_tuple(item)
 
     if item_id is None or item_name is None:
-        logging.warning(f'Property_lookup: User {ctx.author.display_name} submitted {item} which converted to '
+        logging.warning(f'Property_lookup: User {ctx.author} submitted {item} which converted to '
                         f'({item_id}, {item_name}) is not a valid item pair')
         await ctx.respond('Unable to find any valid items that match your request, '
                           'try `/itemid` to look up any partial item names')
@@ -470,7 +486,7 @@ async def property_lookup(ctx: discord.ApplicationContext, item: str, game: str,
     elif game == 'rs3':
         game_link = 'https://runescape.wiki/'
     else:
-        logging.warning(f'Property_lookup: User {ctx.author.display_name} submitted {game} which is not valid')
+        logging.warning(f'Property_lookup: User {ctx.author} submitted {game} which is not valid')
         await ctx.respond('Invalid game selection, use OSRS or RS3')
         return
 
@@ -495,14 +511,16 @@ async def property_lookup(ctx: discord.ApplicationContext, item: str, game: str,
         keys = [a for a in properties.content.keys() if p.lower() in a.lower()]
         if keys:
             for key in keys:
-                embed.add_field(name=f"{key}",
+                embed.add_field(name=f"{key.capitalize()}",
                                 value=f'{properties.content.get(key)}')
 
     if not embed.fields:
         embed.add_field(name="No properties found",
                         value='Try using another prop filter or use `all` to see a list of properties')
 
-    embed.set_footer(text="Information requested by: {}".format(ctx.author.display_name))
+    embed.set_author(name=ctx.author.display_name, url=ctx.author.jump_url, icon_url=ctx.author.display_avatar.url)
+    embed.set_footer(text="RSWiki Bot is created by Garrett#8250")
+
     await ctx.respond(embed=embed)
 
 
@@ -516,7 +534,7 @@ async def wiki_search(ctx: discord.ApplicationContext, page: str, game: str):
     elif game == 'rs3':
         game_link = 'https://runescape.wiki/'
     else:
-        logging.warning(f'Property_lookup: User {ctx.author.display_name} submitted {game} which is not valid')
+        logging.warning(f'Property_lookup: User {ctx.author} submitted {game} which is not valid')
         await ctx.respond('Invalid game selection, use OSRS or RS3')
         return
 
