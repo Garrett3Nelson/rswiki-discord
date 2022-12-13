@@ -65,13 +65,13 @@ async def hello(ctx):
     await ctx.respond("Hello!")
 
 
-@bot.slash_command(description='Documentation on commands')
+@bot.slash_command(name='help', description='Documentation on commands')
 @option('command', description='Which command to provide help (or all)', required=False, default='all')
-async def help(ctx: discord.ApplicationContext, command: str):
+async def bot_help(ctx: discord.ApplicationContext, command: str):
     embed = discord.Embed(title=f'Help - {command.capitalize()}')
     # embed.set_thumbnail(url='https://oldschool.runescape.wiki/images/' + item_map[item_name]['icon'].replace(' ', '_'))
 
-    valid_commands = ['all', 'latest', 'average', 'timeseries', 'property_lookup', 'itemid']
+    valid_commands = ['all', 'latest', 'average', 'timeseries', 'property_lookup', 'search', 'itemid']
 
     if command not in valid_commands:
         logging.warning(f'Help: User {ctx.author.display_name} submitted {command} which is not in the valid commands array')
@@ -85,6 +85,7 @@ async def help(ctx: discord.ApplicationContext, command: str):
 `/average`: Returns the average real-time price & volume over a specified time period for given items
 `/timeseries`: Returns a timeseries graph of the latest 365 price & volume datapoints for a specific time step for a given item
 `/property_lookup`: Returns properties and their values for any item.
+`/search`: Searches the RSWiki and returns the page embed.
 `/itemid`: Look up an item by name to find out the item ID""")
 
     elif command == 'latest':
@@ -146,6 +147,18 @@ async def help(ctx: discord.ApplicationContext, command: str):
         embed.add_field(name=f"Sample usage",
                         value="`/property_lookup item:coal game:osrs`", inline=False)
 
+    elif command == 'search':
+        embed.add_field(name=f"RS3 or OSRS Page Search",
+                        value="Returns the search result for the given page", inline=False)
+        embed.add_field(name=f"Arguments",
+                        value="`page` and `game`", inline=False)
+        embed.add_field(name='page', value="The page to search. Not case sensitive. Returns the closest match",
+                        inline=True)
+        embed.add_field(name='game',
+                        value="The game to look up. OSRS or RS3 (not case sensitive). Default OSRS", inline=True)
+        embed.add_field(name=f"Sample usage",
+                        value="`/search page:coal game:osrs`", inline=False)
+
     elif command == 'itemid':
         embed.add_field(name=f"OSRS Item mapping lookup",
                         value="Look up an item by name to find out the item ID", inline=False)
@@ -155,7 +168,7 @@ async def help(ctx: discord.ApplicationContext, command: str):
         embed.add_field(name=f"Sample usage",
                         value="`/itemid name:crystal", inline=False)
 
-    embed.set_footer(text="Information requested by: {}".format(ctx.author.display_name))
+    embed.set_footer(text="RSWiki Bot is created by Garrett#8250")
     await ctx.respond(embed=embed)
 
 
@@ -438,9 +451,9 @@ async def timeseries(ctx: discord.ApplicationContext, item: str, timestep: str, 
 
 
 @bot.slash_command(description='Look up item property(ies)')
-@option(name='item', description='Which item name or item ID to look up', required=True)
-@option(name='game', description='OSRS or RS3', required=True, default='osrs')
-@option(name='prop', description='Which property(ies) to look up (separate with |)', required=False, default='all')
+@option('item', description='Which item name or item ID to look up', required=True)
+@option('game', description='OSRS or RS3', required=True, default='osrs')
+@option('prop', description='Which property(ies) to look up (separate with |)', required=False, default='all')
 async def property_lookup(ctx: discord.ApplicationContext, item: str, game: str, prop: str):
     item_id, item_name = item_to_tuple(item)
 
@@ -491,6 +504,23 @@ async def property_lookup(ctx: discord.ApplicationContext, item: str, game: str,
 
     embed.set_footer(text="Information requested by: {}".format(ctx.author.display_name))
     await ctx.respond(embed=embed)
+
+
+@bot.slash_command(name='search', description='Search the wiki for a page')
+@option('page', description='What page to search for', required=True)
+@option('game', description='OSRS or RS3', required=True, default='osrs')
+async def wiki_search(ctx: discord.ApplicationContext, page: str, game: str):
+    game = game.lower()
+    if game == 'osrs':
+        game_link = 'https://oldschool.runescape.wiki/'
+    elif game == 'rs3':
+        game_link = 'https://runescape.wiki/'
+    else:
+        logging.warning(f'Property_lookup: User {ctx.author.display_name} submitted {game} which is not valid')
+        await ctx.respond('Invalid game selection, use OSRS or RS3')
+        return
+
+    await ctx.respond(f'{game_link}?search={page}')
 
 
 @bot.slash_command(name='itemid', description='Lookup the ID of an item')
