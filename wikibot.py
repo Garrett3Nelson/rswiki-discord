@@ -16,6 +16,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import io
+from urllib.parse import quote
 
 # Helper imports
 import logging
@@ -538,7 +539,7 @@ async def wiki_search(ctx: discord.ApplicationContext, page: str, game: str):
         await ctx.respond('Invalid game selection, use OSRS or RS3')
         return
 
-    await ctx.respond(f'{game_link}?search={page}')
+    await ctx.respond(f'{game_link}?search={quote(page)}')
 
 
 @bot.slash_command(name='itemid', description='Lookup the ID of an item')
