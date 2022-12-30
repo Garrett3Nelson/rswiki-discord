@@ -175,7 +175,7 @@ async def bot_help(ctx: discord.ApplicationContext, command: str):
         embed.add_field(name=f"Sample usage",
                         value="`/itemid name:crystal", inline=False)
 
-    embed.set_author(name=ctx.author)
+    embed.set_author(name=ctx.author.display_name, url=ctx.author.jump_url, icon_url=ctx.author.display_avatar.url)
     embed.set_footer(text="RSWiki Bot is created by Garrett#8250")
     await ctx.respond(embed=embed)
 
