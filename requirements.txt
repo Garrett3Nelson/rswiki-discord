@@ -1,6 +1,6 @@
 py-cord==2.3.0
 python-dotenv==0.21.0
 pandas==1.5.2
-rswiki-wrapper==0.0.5
+rswiki-wrapper==0.0.6
 matplotlib==3.6.2
 numpy==1.23.5
