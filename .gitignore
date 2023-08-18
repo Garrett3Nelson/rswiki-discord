@@ -8,3 +8,4 @@
 /rswiki_wrapper.egg-info/
 *.ipynb
 /local.env
+stack.env
