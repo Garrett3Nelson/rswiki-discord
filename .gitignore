@@ -6,3 +6,4 @@
 /pyproject.toml
 /dist/
 /rswiki_wrapper.egg-info/
+*.ipynb
