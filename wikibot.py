@@ -27,6 +27,9 @@ logging.info('Loading environment')
 dotenv.load_dotenv()
 
 user_agent = os.getenv('USER_AGENT')
+if user_agent is None:
+    user_agent = 'RSWiki Bot Default'
+    logging.info('Using default user_agent')
 
 item_mapping = Mapping(user_agent=user_agent)
 item_map = {}
