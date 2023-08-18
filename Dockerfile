@@ -6,7 +6,7 @@ FROM python:3.9-bookworm
 ENV TOKEN $TOKEN
 ENV DEBUG_GUILD $DEBUG_GUILD
 ENV USER_AGENT $USER_AGENT
-WORKDIR .
 COPY requirements.txt wikibot.py ./
+COPY stack.env ./.env
 RUN pip install -r requirements.txt
 CMD ["python", "wikibot.py"]
