@@ -26,8 +26,6 @@ logging.info('Loading environment')
 
 dotenv.load_dotenv()
 
-debug_guild = os.environ['DEBUG_GUILD'].split(',')
-debug_guild = [int(x) for x in debug_guild]
 user_agent = os.getenv('USER_AGENT')
 
 item_mapping = Mapping(user_agent=user_agent)

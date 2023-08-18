@@ -1,3 +1,14 @@
+version: "3.9"
+
 services:
-  discord:
-    build: .
+  wasp-api:
+    container_name: "rswiki"
+    build:
+      context: .
+      args:
+        TOKEN: $TOKEN
+        DEBUG_GUILD: $DEBUG_GUILD
+        USER_AGENT: $USER_AGENT
+    restart: unless-stopped
+    env_file:
+      - .env
